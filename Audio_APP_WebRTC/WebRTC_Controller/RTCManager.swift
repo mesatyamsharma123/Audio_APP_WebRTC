@@ -1,5 +1,5 @@
 import Foundation
-import WebRTC
+@preconcurrency import WebRTC
 import AVFoundation
 
 final class WebRTCManager: NSObject, RTCPeerConnectionDelegate {
@@ -187,7 +187,7 @@ final class WebRTCManager: NSObject, RTCPeerConnectionDelegate {
     }
 
     func peerConnectionShouldNegotiate(_ peerConnection: RTCPeerConnection) {
-        print("🔄 Should negotiate")
+        print("🔄 Should negotiate here.........")
     }
 
     func peerConnection(_ peerConnection: RTCPeerConnection, didRemove candidates: [RTCIceCandidate]) {
