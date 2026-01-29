@@ -12,6 +12,8 @@ final class WebRTCManager: NSObject, RTCPeerConnectionDelegate {
     private(set) var localAudioTrack: RTCAudioTrack?
     private(set) var remoteAudioTrack: RTCAudioTrack?
 
+    private var remotePeerId: String?
+
     override init() {
         RTCInitializeSSL()
         factory = RTCPeerConnectionFactory()
@@ -64,26 +66,28 @@ final class WebRTCManager: NSObject, RTCPeerConnectionDelegate {
 
     // MARK: - SDP Methods
     @MainActor
-    func createOffer() async {
+    func createOffer(to peerId: String) async {
         guard let pc = peerConnection else { return }
+        remotePeerId = peerId
         do {
             let offer = try await pc.offer(for: RTCMediaConstraints(mandatoryConstraints: nil, optionalConstraints: nil))
             try await pc.setLocalDescription(offer)
-            print("✅ Offer created & set locally")
-            await SignalingManager.shared.sendSDP(offer)
+            print("✅ Offer created & set locally for peer: \(peerId)")
+            await SignalingManager.shared.sendSDP(offer, to: peerId)
         } catch {
             print("❌ Failed creating offer:", error)
         }
     }
 
     @MainActor
-    func createAnswer() async {
+    func createAnswer(to peerId: String) async {
         guard let pc = peerConnection else { return }
+        remotePeerId = peerId
         do {
             let answer = try await pc.answer(for: RTCMediaConstraints(mandatoryConstraints: nil, optionalConstraints: nil))
             try await pc.setLocalDescription(answer)
-            print("✅ Answer created & set locally")
-            await SignalingManager.shared.sendSDP(answer)
+            print("✅ Answer created & set locally for peer: \(peerId)")
+            await SignalingManager.shared.sendSDP(answer, to: peerId)
         } catch {
             print("❌ Failed creating answer:", error)
         }
@@ -100,10 +104,13 @@ final class WebRTCManager: NSObject, RTCPeerConnectionDelegate {
     func addIceCandidate(_ candidate: RTCIceCandidate) async throws {
         guard let pc = peerConnection else { return }
         try await pc.add(candidate)
+        if let remotePeerId {
+            await SignalingManager.shared.sendCandidate(candidate, to: remotePeerId)
+        }
         print("✅ ICE candidate added: \(candidate.sdp)")
     }
 
-    // MARK: - RTCPeerConnectionDelegate (Plan B)
+    // MARK: - RTCPeerConnectionDelegate
     func peerConnection(_ peerConnection: RTCPeerConnection, didAdd stream: RTCMediaStream) {
         if let audioTrack = stream.audioTracks.first {
             remoteAudioTrack = audioTrack
@@ -119,7 +126,9 @@ final class WebRTCManager: NSObject, RTCPeerConnectionDelegate {
 
     func peerConnection(_ peerConnection: RTCPeerConnection, didGenerate candidate: RTCIceCandidate) {
         Task {
-            await SignalingManager.shared.sendCandidate(candidate)
+            if let remotePeerId {
+                await SignalingManager.shared.sendCandidate(candidate, to: remotePeerId)
+            }
         }
         print("📡 ICE candidate generated")
     }
@@ -154,6 +163,7 @@ final class WebRTCManager: NSObject, RTCPeerConnectionDelegate {
         peerConnection = nil
         localAudioTrack = nil
         remoteAudioTrack = nil
+        remotePeerId = nil
         print("🔹 WebRTCManager cleaned up")
     }
 }

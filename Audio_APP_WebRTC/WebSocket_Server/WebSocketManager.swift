@@ -8,14 +8,15 @@ final class SignalingManager: ObservableObject {
 
     @Published var isConnected: Bool = false
     @Published var remoteAvailable: Bool = false
-    @Published var connectedPeers: Int = 0 // How many peers are connected
+    @Published var connectedPeers: Int = 0
+    @Published var latestPeerId: String?
 
     private var socket: URLSessionWebSocketTask?
     private var pingTimer: Timer?
 
     // MARK: - Connect
     func connect() {
-        let url = URL(string: "wss://8d100129a811.ngrok-free.app")!
+        let url = URL(string: "wss://53cf93551a5a.ngrok-free.app")! // Replace with your ngrok URL
         socket = URLSession.shared.webSocketTask(with: url)
         socket?.resume()
         isConnected = true
@@ -35,8 +36,9 @@ final class SignalingManager: ObservableObject {
     // MARK: - Keep-alive ping
     private func startPing() {
         pingTimer = Timer.scheduledTimer(withTimeInterval: 10, repeats: true) { [weak self] _ in
+            guard let socket = self?.socket else { return }
             Task {
-                try? await self?.socket?.send(.string("ping"))
+                try? await socket.send(.string("ping"))
             }
         }
     }
@@ -46,7 +48,7 @@ final class SignalingManager: ObservableObject {
         pingTimer = nil
     }
 
-    // MARK: - Listen for messages
+    // MARK: - Listen
     private func listen() {
         socket?.receive { [weak self] result in
             switch result {
@@ -86,18 +88,26 @@ final class SignalingManager: ObservableObject {
 
         switch type {
         case "offer":
-            if let sdpString = json["sdp"] as? String {
+            if let sdpString = json["sdp"] as? String,
+               let fromPeer = json["from"] as? String {
                 let sdp = RTCSessionDescription(type: .offer, sdp: sdpString)
                 Task {
+                    self.latestPeerId = fromPeer
                     try? await WebRTCManager.shared.setRemoteDescription(sdp)
-                    try? await WebRTCManager.shared.createAnswer()
+                    try? await WebRTCManager.shared.createAnswer(to: fromPeer)
                 }
             }
+
         case "answer":
-            if let sdpString = json["sdp"] as? String {
+            if let sdpString = json["sdp"] as? String,
+               let fromPeer = json["from"] as? String {
                 let sdp = RTCSessionDescription(type: .answer, sdp: sdpString)
-                Task { try? await WebRTCManager.shared.setRemoteDescription(sdp) }
+                Task {
+                    self.latestPeerId = fromPeer
+                    try? await WebRTCManager.shared.setRemoteDescription(sdp)
+                }
             }
+
         case "candidate":
             if let candidate = json["candidate"] as? String,
                let index = json["sdpMLineIndex"] as? Int,
@@ -111,20 +121,22 @@ final class SignalingManager: ObservableObject {
     }
 
     // MARK: - Send messages
-    func sendSDP(_ sdp: RTCSessionDescription) async {
+    func sendSDP(_ sdp: RTCSessionDescription, to peerId: String) async {
         let msg: [String: Any] = [
             "type": sdp.type == .offer ? "offer" : "answer",
-            "sdp": sdp.sdp
+            "sdp": sdp.sdp,
+            "to": peerId
         ]
         await send(msg)
     }
 
-    func sendCandidate(_ c: RTCIceCandidate) async {
+    func sendCandidate(_ c: RTCIceCandidate, to peerId: String) async {
         let msg: [String: Any] = [
             "type": "candidate",
             "candidate": c.sdp,
             "sdpMLineIndex": c.sdpMLineIndex,
-            "sdpMid": c.sdpMid ?? ""
+            "sdpMid": c.sdpMid ?? "",
+            "to": peerId
         ]
         await send(msg)
     }
@@ -132,12 +144,11 @@ final class SignalingManager: ObservableObject {
     private func send(_ msg: [String: Any]) async {
         guard let data = try? JSONSerialization.data(withJSONObject: msg) else { return }
         let text = String(decoding: data, as: UTF8.self)
-        Task { [weak socket] in
-            do {
-                try await socket?.send(.string(text))
-            } catch {
-                print("WebSocket send error:", error)
-            }
+        guard let socket = socket else { return }
+        do {
+            try await socket.send(.string(text))
+        } catch {
+            print("WebSocket send error:", error)
         }
     }
 }

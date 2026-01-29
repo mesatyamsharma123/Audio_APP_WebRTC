@@ -1,111 +1,70 @@
 import Foundation
-import AVFoundation
+import SwiftUI
 import Combine
-import WebRTC
+import WebRTC       // For RTCAudioTrack
+import AVFoundation // For AVAudioSession
 
-enum CallState {
-    case idle
-    case connecting
-    case inCall
-    case ended
-}
+@MainActor
+class CallViewModel: ObservableObject {
 
-final class CallViewModel: ObservableObject {
+    enum CallState {
+        case idle, connecting, inCall, ended
+    }
 
     @Published var callState: CallState = .idle
-    @Published var isMuted = false
-    @Published var isSpeakerOn = false
-    @Published var showPermissionAlert = false
+    @Published var isMuted: Bool = false
+    @Published var isSpeakerOn: Bool = false
+    @Published var showPermissionAlert: Bool = false
 
-    private let audioSession = AVAudioSession.sharedInstance()
     private var cancellables = Set<AnyCancellable>()
 
     init() {
-        // Observe SignalingManager remote availability
-        SignalingManager.shared.$remoteAvailable
-            .receive(on: DispatchQueue.main)
-            .sink { available in
-                print("Remote peer available:", available)
+        // Observe connected peers
+        SignalingManager.shared.$connectedPeers
+            .sink { peers in
+                print("Peers online: \(peers)")
             }
             .store(in: &cancellables)
     }
 
     func startCall() {
-        guard SignalingManager.shared.isConnected else {
-            print("❌ WebSocket not connected yet")
-            return
-        }
-        guard SignalingManager.shared.remoteAvailable else {
-            print("⏳ Remote peer not ready yet")
+        guard let peerId = SignalingManager.shared.latestPeerId else {
+            print("❌ No peer available to call")
             return
         }
 
-        requestMicrophonePermission { granted in
-            guard granted else {
-                DispatchQueue.main.async { self.showPermissionAlert = true }
-                return
-            }
-
+        callState = .connecting
+        Task {
+            WebRTCManager.shared.setupPeerConnection()
+            await WebRTCManager.shared.createOffer(to: peerId)
             DispatchQueue.main.async {
-                self.callState = .connecting
-                self.setupAudioSession()
-                Task { await self.setupWebRTC() }
+                self.callState = .inCall
             }
         }
     }
 
     func endCall() {
-        DispatchQueue.main.async {
-            self.callState = .ended
-            self.isMuted = false
-            self.isSpeakerOn = false
-            WebRTCManager.shared.cleanup()
-            try? self.audioSession.setActive(false)
-        }
+        WebRTCManager.shared.cleanup()
+        callState = .ended
     }
 
     func toggleMute() {
         isMuted.toggle()
-        WebRTCManager.shared.localAudioTrack?.isEnabled = !isMuted
+        // Ensure we safely enable/disable the local track
+        if let track = WebRTCManager.shared.localAudioTrack {
+            track.isEnabled = !isMuted
+        }
     }
 
     func toggleSpeaker() {
         isSpeakerOn.toggle()
-        try? audioSession.overrideOutputAudioPort(
-            isSpeakerOn ? .speaker : .none
-        )
-    }
-
-    private func setupAudioSession() {
-        try? audioSession.setCategory(
-            .playAndRecord,
-            mode: .voiceChat,
-            options: [.defaultToSpeaker, .allowBluetooth]
-        )
-        try? audioSession.setActive(true)
-    }
-
-    private func requestMicrophonePermission(_ completion: @escaping (Bool) -> Void) {
-        switch audioSession.recordPermission {
-        case .granted: completion(true)
-        case .denied: completion(false)
-        case .undetermined:
-            audioSession.requestRecordPermission { granted in
-                DispatchQueue.main.async { completion(granted) }
-            }
-        @unknown default: completion(false)
-        }
-    }
-
-    // MARK: - WebRTC Setup
-    private func setupWebRTC() async {
-        await WebRTCManager.shared.setupPeerConnection()
+        let session = AVAudioSession.sharedInstance()
         do {
-            try await WebRTCManager.shared.createOffer()
-            DispatchQueue.main.async { self.callState = .inCall }
+            try session.overrideOutputAudioPort(
+                isSpeakerOn ? .speaker : .none
+            )
         } catch {
-            print("WebRTC setup failed:", error)
-            DispatchQueue.main.async { self.callState = .ended }
+            print("❌ Failed to toggle speaker:", error)
         }
     }
 }
