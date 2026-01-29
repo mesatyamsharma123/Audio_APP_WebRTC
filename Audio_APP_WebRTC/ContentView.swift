@@ -3,10 +3,13 @@ import SwiftUI
 struct ContentView: View {
 
     @StateObject private var viewModel = CallViewModel()
+    @ObservedObject private var signaling = SignalingManager.shared
 
     var body: some View {
-        VStack {
+        VStack(spacing: 30) {
             Spacer()
+
+            connectionStatusView
 
             switch viewModel.callState {
             case .idle:
@@ -23,6 +26,28 @@ struct ContentView: View {
         }
         .padding()
         .animation(.easeInOut, value: viewModel.callState)
+        .onAppear {
+            SignalingManager.shared.connect()
+        }
+    }
+}
+
+// MARK: - Connection Status
+private extension ContentView {
+
+    var connectionStatusView: some View {
+        HStack {
+            Circle()
+                .fill(signaling.isConnected ? .green : .red)
+                .frame(width: 12, height: 12)
+            Text(signaling.isConnected ? "Connected to server" : "Connecting...")
+                .font(.subheadline)
+            if signaling.isConnected && !signaling.remoteAvailable {
+                Text("(Waiting for peer)")
+                    .font(.subheadline)
+                    .foregroundColor(.orange)
+            }
+        }
     }
 }
 
@@ -39,6 +64,7 @@ private extension ContentView {
                 viewModel.startCall()
             }
             .buttonStyle(.borderedProminent)
+            .disabled(!signaling.remoteAvailable)
         }
     }
 
@@ -96,6 +122,7 @@ private extension ContentView {
                 viewModel.startCall()
             }
             .buttonStyle(.borderedProminent)
+            .disabled(!signaling.remoteAvailable)
         }
     }
 }

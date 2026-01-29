@@ -18,22 +18,38 @@ final class CallViewModel: ObservableObject {
     @Published var showPermissionAlert = false
 
     private let audioSession = AVAudioSession.sharedInstance()
+    private var cancellables = Set<AnyCancellable>()
+
+    init() {
+        // Observe SignalingManager remote availability
+        SignalingManager.shared.$remoteAvailable
+            .receive(on: DispatchQueue.main)
+            .sink { available in
+                print("Remote peer available:", available)
+            }
+            .store(in: &cancellables)
+    }
 
     func startCall() {
+        guard SignalingManager.shared.isConnected else {
+            print("❌ WebSocket not connected yet")
+            return
+        }
+        guard SignalingManager.shared.remoteAvailable else {
+            print("⏳ Remote peer not ready yet")
+            return
+        }
+
         requestMicrophonePermission { granted in
             guard granted else {
-                DispatchQueue.main.async {
-                    self.showPermissionAlert = true
-                }
+                DispatchQueue.main.async { self.showPermissionAlert = true }
                 return
             }
 
             DispatchQueue.main.async {
                 self.callState = .connecting
                 self.setupAudioSession()
-                Task {
-                    await self.setupWebRTC()
-                }
+                Task { await self.setupWebRTC() }
             }
         }
     }
