@@ -2,21 +2,20 @@ import Foundation
 import WebRTC
 import Combine
 
+@MainActor
 final class SignalingManager: ObservableObject {
-    
     static let shared = SignalingManager()
     
     @Published var isConnected: Bool = false
-    @Published var remoteAvailable: Bool = false
     @Published var connectedPeers: Int = 0
+    @Published var remoteAvailable: Bool = false
     @Published var latestPeerId: String? = nil
     
     private var socket: URLSessionWebSocketTask?
     private var pingTimer: Timer?
     
-    // MARK: - Connect
     func connect() {
-        guard let url = URL(string: "ws://0cdab7b1bd0c.ngrok-free.app") else { return }
+        guard let url = URL(string: "wss://c86e9d583a80.ngrok-free.app") else { return }
         socket = URLSession.shared.webSocketTask(with: url)
         socket?.resume()
         isConnected = true
@@ -28,13 +27,13 @@ final class SignalingManager: ObservableObject {
     func disconnect() {
         socket?.cancel()
         isConnected = false
+        connectedPeers = 0
         remoteAvailable = false
         latestPeerId = nil
         stopPing()
         print("❌ WebSocket disconnected")
     }
     
-    // MARK: - Keep-alive ping
     private func startPing() {
         pingTimer = Timer.scheduledTimer(withTimeInterval: 10, repeats: true) { [weak self] _ in
             Task { try? await self?.socket?.send(.string("ping")) }
@@ -46,7 +45,6 @@ final class SignalingManager: ObservableObject {
         pingTimer = nil
     }
     
-    // MARK: - Listen
     private func listen() {
         socket?.receive { [weak self] result in
             guard let self = self else { return }
@@ -61,7 +59,6 @@ final class SignalingManager: ObservableObject {
         }
     }
     
-    // MARK: - Handle messages
     private func handle(_ text: String) {
         if text == "ping" || text == "pong" { return }
         
@@ -71,7 +68,7 @@ final class SignalingManager: ObservableObject {
         
         switch type {
         case "peers":
-            if let peers = json["peers"] as? [String],
+            if let peers = json["peersList"] as? [String],
                let myId = json["myId"] as? String {
                 DispatchQueue.main.async {
                     self.connectedPeers = peers.count
@@ -80,20 +77,23 @@ final class SignalingManager: ObservableObject {
                     print("🔹 Peers updated: \(peers), latestPeerId: \(self.latestPeerId ?? "nil")")
                 }
             }
+            
         case "offer":
             if let sdpString = json["sdp"] as? String,
                let fromPeer = json["from"] as? String {
                 let sdp = RTCSessionDescription(type: .offer, sdp: sdpString)
                 Task {
                     try? await WebRTCManager.shared.setRemoteDescription(sdp)
-                    try? await WebRTCManager.shared.createAnswer(to: fromPeer)
+                    // Answer is created inside setRemoteDescription
                 }
             }
+            
         case "answer":
             if let sdpString = json["sdp"] as? String {
                 let sdp = RTCSessionDescription(type: .answer, sdp: sdpString)
                 Task { try? await WebRTCManager.shared.setRemoteDescription(sdp) }
             }
+            
         case "candidate":
             if let candidate = json["candidate"] as? String,
                let index = json["sdpMLineIndex"] as? Int,
@@ -103,11 +103,11 @@ final class SignalingManager: ObservableObject {
                                                   sdpMid: mid)
                 Task { try? await WebRTCManager.shared.addIceCandidate(iceCandidate) }
             }
+            
         default: break
         }
     }
     
-    // MARK: - Send SDP / Candidate
     func sendSDP(_ sdp: RTCSessionDescription, to peerId: String) async {
         let msg: [String: Any] = [
             "type": sdp.type == .offer ? "offer" : "answer",

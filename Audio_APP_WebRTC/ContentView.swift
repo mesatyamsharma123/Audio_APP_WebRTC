@@ -1,4 +1,6 @@
 import SwiftUI
+import AVFoundation
+import WebRTC
 
 struct ContentView: View {
     @StateObject private var viewModel = CallViewModel()
@@ -7,7 +9,6 @@ struct ContentView: View {
     var body: some View {
         VStack(spacing: 30) {
             Spacer()
-            
             connectionStatusView
             
             switch viewModel.callState {
@@ -22,19 +23,16 @@ struct ContentView: View {
         .padding()
         .onAppear {
             SignalingManager.shared.connect()
+            WebRTCManager.shared.setupPeerConnection()
         }
     }
     
     var connectionStatusView: some View {
         HStack {
-            Circle()
-                .fill(signaling.isConnected ? .green : .red)
-                .frame(width: 12, height: 12)
-            
+            Circle().fill(signaling.isConnected ? .green : .red).frame(width: 12, height: 12)
             VStack(alignment: .leading) {
                 Text(signaling.isConnected ? "Connected to server" : "Connecting...")
                 Text("Peers online: \(signaling.connectedPeers)").foregroundColor(.blue)
-                
                 if signaling.isConnected && !signaling.remoteAvailable {
                     Text("(Waiting for peer)").foregroundColor(.orange)
                 }
