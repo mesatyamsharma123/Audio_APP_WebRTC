@@ -8,10 +8,9 @@ class CallViewModel: ObservableObject {
     @Published var callState: CallState = .idle
     @Published var isMuted: Bool = false
     @Published var isSpeakerOn: Bool = true
-    @Published var showPermissionAlert: Bool = false
-
+    
     enum CallState { case idle, connecting, inCall, ended }
-
+    
     func startCall() {
         guard let peerId = SignalingManager.shared.latestPeerId else {
             print("❌ No peer available to call")
@@ -24,17 +23,17 @@ class CallViewModel: ObservableObject {
             callState = .inCall
         }
     }
-
+    
     func endCall() {
         WebRTCManager.shared.cleanup()
         callState = .ended
     }
-
+    
     func toggleMute() {
         isMuted.toggle()
         WebRTCManager.shared.localAudioTrack?.isEnabled = !isMuted
     }
-
+    
     func toggleSpeaker() {
         isSpeakerOn.toggle()
         let session = AVAudioSession.sharedInstance()

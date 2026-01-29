@@ -1,63 +1,60 @@
 import SwiftUI
-import WebRTC
-import AVFoundation
 
 struct ContentView: View {
     @StateObject private var viewModel = CallViewModel()
     @ObservedObject private var signaling = SignalingManager.shared
-
+    
     var body: some View {
         VStack(spacing: 30) {
             Spacer()
-
+            
             connectionStatusView
-
+            
             switch viewModel.callState {
             case .idle: idleView
             case .connecting: connectingView
             case .inCall: inCallView
             case .ended: endedView
             }
-
+            
             Spacer()
         }
         .padding()
-        .onAppear { SignalingManager.shared.connect() }
+        .onAppear {
+            SignalingManager.shared.connect()
+        }
     }
-
+    
     var connectionStatusView: some View {
         HStack {
             Circle()
                 .fill(signaling.isConnected ? .green : .red)
                 .frame(width: 12, height: 12)
-
+            
             VStack(alignment: .leading) {
                 Text(signaling.isConnected ? "Connected to server" : "Connecting...")
-                Text("Peers online: \(signaling.connectedPeers)")
-                    .foregroundColor(.blue)
-
+                Text("Peers online: \(signaling.connectedPeers)").foregroundColor(.blue)
+                
                 if signaling.isConnected && !signaling.remoteAvailable {
                     Text("(Waiting for peer)").foregroundColor(.orange)
                 }
             }
         }
     }
-
+    
     var idleView: some View {
         VStack(spacing: 20) {
             Text("🎧 Audio Chat").font(.largeTitle).bold()
-            Button("Start Call") {
-                viewModel.startCall()
-            }
-            .buttonStyle(.borderedProminent)
-            .disabled(!signaling.remoteAvailable)
+            Button("Start Call") { viewModel.startCall() }
+                .buttonStyle(.borderedProminent)
+                .disabled(!signaling.remoteAvailable)
         }
     }
-
+    
     var connectingView: some View {
         VStack(spacing: 20) { ProgressView(); Text("Connecting...") }
     }
-
+    
     var inCallView: some View {
         VStack(spacing: 40) {
             Text("Connected").foregroundColor(.green)
@@ -74,7 +71,7 @@ struct ContentView: View {
             }.font(.title)
         }
     }
-
+    
     var endedView: some View {
         VStack(spacing: 20) {
             Text("Call Ended")

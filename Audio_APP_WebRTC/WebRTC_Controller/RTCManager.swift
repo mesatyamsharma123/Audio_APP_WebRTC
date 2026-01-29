@@ -12,8 +12,8 @@ final class WebRTCManager: NSObject, RTCPeerConnectionDelegate {
     private(set) var localAudioTrack: RTCAudioTrack?
     private(set) var remoteAudioTrack: RTCAudioTrack?
 
-    private var remotePeerId: String? // Track remote peer
-    private var queuedCandidates: [RTCIceCandidate] = [] // Queue ICE before remote SDP
+    private var remotePeerId: String?              // Track remote peer
+    private var queuedCandidates: [RTCIceCandidate] = []  // Queue ICE before remote SDP
 
     override init() {
         RTCInitializeSSL()
@@ -100,7 +100,7 @@ final class WebRTCManager: NSObject, RTCPeerConnectionDelegate {
         try await pc.setRemoteDescription(sdp)
         print("✅ Remote SDP set: \(sdp.type.rawValue)")
 
-        // Send queued ICE candidates
+        // Send queued ICE candidates after remote SDP is set
         for candidate in queuedCandidates {
             if let remoteId = remotePeerId {
                 await SignalingManager.shared.sendCandidate(candidate, to: remoteId)
@@ -128,13 +128,12 @@ final class WebRTCManager: NSObject, RTCPeerConnectionDelegate {
     func peerConnection(_ peerConnection: RTCPeerConnection, didGenerate candidate: RTCIceCandidate) {
         guard let remoteId = remotePeerId else { return }
 
-        // Queue if remote SDP not yet set
         if peerConnection.remoteDescription == nil {
             queuedCandidates.append(candidate)
-            print("⏳ Candidate queued")
+            print("⏳ ICE candidate queued (remote SDP not ready)")
         } else {
             Task { await SignalingManager.shared.sendCandidate(candidate, to: remoteId) }
-            print("📡 ICE candidate sent")
+            print("📡 ICE candidate sent to peer:", remoteId)
         }
     }
 
@@ -144,17 +143,28 @@ final class WebRTCManager: NSObject, RTCPeerConnectionDelegate {
     }
 
     func peerConnection(_ peerConnection: RTCPeerConnection, didChange newState: RTCIceConnectionState) {
-        print("ℹ️ ICE state: \(newState.rawValue)")
+        print("ℹ️ ICE state changed:", newState.rawValue)
     }
 
     func peerConnection(_ peerConnection: RTCPeerConnection, didChange newState: RTCIceGatheringState) {
-        print("ℹ️ ICE gathering state: \(newState.rawValue)")
+        print("ℹ️ ICE gathering state changed:", newState.rawValue)
     }
 
-    func peerConnectionShouldNegotiate(_ peerConnection: RTCPeerConnection) { }
-    func peerConnection(_ peerConnection: RTCPeerConnection, didChange stateChanged: RTCSignalingState) { }
-    func peerConnection(_ peerConnection: RTCPeerConnection, didRemove candidates: [RTCIceCandidate]) { }
-    func peerConnection(_ peerConnection: RTCPeerConnection, didOpen dataChannel: RTCDataChannel) { }
+    func peerConnectionShouldNegotiate(_ peerConnection: RTCPeerConnection) {
+        print("🔄 Should negotiate")
+    }
+
+    func peerConnection(_ peerConnection: RTCPeerConnection, didChange stateChanged: RTCSignalingState) {
+        print("ℹ️ Signaling state changed:", stateChanged.rawValue)
+    }
+
+    func peerConnection(_ peerConnection: RTCPeerConnection, didRemove candidates: [RTCIceCandidate]) {
+        print("🗑 Removed ICE candidates")
+    }
+
+    func peerConnection(_ peerConnection: RTCPeerConnection, didOpen dataChannel: RTCDataChannel) {
+        print("📨 Data channel opened:", dataChannel.label)
+    }
 
     // MARK: - Cleanup
     func cleanup() {
