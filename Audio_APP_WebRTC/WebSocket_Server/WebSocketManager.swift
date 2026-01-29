@@ -89,21 +89,22 @@ final class SignalingManager: ObservableObject {
         case "offer":
             if let sdpString = json["sdp"] as? String,
                let fromPeer = json["from"] as? String {
-                let sdp = RTCSessionDescription(type: .offer, sdp: sdpString)
-                Task {
-                    do {
-                        // If we already created a local offer, do not set remote SDP immediately
-                        if !WebRTCManager.shared.hasLocalOffer {
-                            try await WebRTCManager.shared.setRemoteDescription(sdp)
-                            try await WebRTCManager.shared.createAnswer(to: fromPeer)
-                        } else {
-                            print("⚠️ Received remote offer but we already have local offer, skipping")
-                        }
-                    } catch {
-                        print("❌ Failed handling offer:", error)
+
+                DispatchQueue.main.async {
+
+                    if WebRTCManager.shared.peerConnection == nil {
+                        WebRTCManager.shared.setupPeerConnection()
                     }
+
+                    let sdp = RTCSessionDescription(type: .offer, sdp: sdpString)
+
+                    // ✅ NO async / await here
+                    WebRTCManager.shared.setRemoteDescription(sdp)
+                    WebRTCManager.shared.createAnswer(to: fromPeer)
                 }
             }
+
+
 
         case "answer":
             if let sdpString = json["sdp"] as? String {
@@ -168,3 +169,4 @@ final class SignalingManager: ObservableObject {
         }
     }
 }
+
