@@ -36,12 +36,24 @@ final class WebRTCManager: NSObject, RTCPeerConnectionDelegate {
             print("❌ AVAudioSession error:", error)
         }
 
+        // WebRTC audio session setup
         let audioSession = RTCAudioSession.sharedInstance()
-        audioSession.useManualAudio = false
+        audioSession.useManualAudio = true
         audioSession.isAudioEnabled = true
         audioSession.lockForConfiguration()
         audioSession.unlockForConfiguration()
         print("✅ RTCAudioSession enabled")
+    }
+
+    private func forceSpeaker() {
+        let session = AVAudioSession.sharedInstance()
+        do {
+            try session.overrideOutputAudioPort(.speaker)
+            try session.setActive(true)
+            print("🔊 Audio routed to speaker")
+        } catch {
+            print("❌ Failed to force speaker:", error)
+        }
     }
 
     // MARK: - Peer Connection
@@ -65,20 +77,8 @@ final class WebRTCManager: NSObject, RTCPeerConnectionDelegate {
             print("✅ Local audio track added")
         }
     }
-    private func forceSpeaker() {
-        let session = AVAudioSession.sharedInstance()
-        do {
-            try session.overrideOutputAudioPort(.speaker)
-            try session.setActive(true)
-            print("🔊 Audio routed to speaker")
-        } catch {
-            print("❌ Failed to force speaker:", error)
-        }
-    }
 
     // MARK: - SDP Methods
-   
-
     @MainActor
     func createOffer(to peerId: String) async {
         guard let pc = peerConnection else { return }
@@ -86,7 +86,7 @@ final class WebRTCManager: NSObject, RTCPeerConnectionDelegate {
         do {
             let offer = try await pc.offer(for: RTCMediaConstraints(mandatoryConstraints: nil, optionalConstraints: nil))
             try await pc.setLocalDescription(offer)
-            hasLocalOffer = true // <-- track that we have a local offer
+            hasLocalOffer = true
             print("✅ Offer created & set locally for peer:", peerId)
             await SignalingManager.shared.sendSDP(offer, to: peerId)
         } catch {
@@ -94,7 +94,6 @@ final class WebRTCManager: NSObject, RTCPeerConnectionDelegate {
         }
     }
 
-    
     @MainActor
     func handleRemoteOffer(_ sdp: RTCSessionDescription, from peerId: String) {
         remotePeerId = peerId
@@ -107,12 +106,11 @@ final class WebRTCManager: NSObject, RTCPeerConnectionDelegate {
 
         print("ℹ️ Handling remote offer, signalingState:", pc.signalingState.rawValue)
 
-        // 🔥 GLARE FIX FOR iOS (NO rollback support)
+        // Glare fix: recreate PeerConnection if local offer exists
         if pc.signalingState == .haveLocalOffer {
             print("⚠️ Glare detected → recreating PeerConnection")
-
-            cleanup()                 // close old PC
-            setupPeerConnection()     // create fresh PC
+            cleanup()
+            setupPeerConnection()
         }
 
         applyRemoteOfferAndAnswer(sdp)
@@ -145,7 +143,6 @@ final class WebRTCManager: NSObject, RTCPeerConnectionDelegate {
                     }
 
                     print("✅ Answer created & set locally")
-
                     Task {
                         await SignalingManager.shared.sendSDP(answer, to: remoteId)
                     }
@@ -153,8 +150,6 @@ final class WebRTCManager: NSObject, RTCPeerConnectionDelegate {
             }
         }
     }
-
-
 
     @MainActor
     func createAnswer(to peerId: String) {
@@ -200,12 +195,11 @@ final class WebRTCManager: NSObject, RTCPeerConnectionDelegate {
         try await pc.add(candidate)
         print("✅ ICE candidate added: \(candidate.sdp)")
     }
+
     @MainActor
     private func flushQueuedICE() {
         guard let remoteId = remotePeerId else { return }
-
         print("🚀 Flushing \(queuedCandidates.count) queued ICE candidates")
-
         for candidate in queuedCandidates {
             Task {
                 await SignalingManager.shared.sendCandidate(candidate, to: remoteId)
@@ -214,25 +208,17 @@ final class WebRTCManager: NSObject, RTCPeerConnectionDelegate {
         queuedCandidates.removeAll()
     }
 
-
     // MARK: - RTCPeerConnectionDelegate
-    func peerConnection(_ peerConnection: RTCPeerConnection,
-                        didAdd stream: RTCMediaStream) {
-
+    func peerConnection(_ peerConnection: RTCPeerConnection, didAdd stream: RTCMediaStream) {
         if let audioTrack = stream.audioTracks.first {
             remoteAudioTrack = audioTrack
             remoteAudioTrack?.isEnabled = true
-            
-            // 🔥 Force audio to speaker
             forceSpeaker()
-            
             print("🔊 Remote audio track received & speaker forced")
         }
     }
 
-    func peerConnection(_ peerConnection: RTCPeerConnection,
-                        didGenerate candidate: RTCIceCandidate) {
-
+    func peerConnection(_ peerConnection: RTCPeerConnection, didGenerate candidate: RTCIceCandidate) {
         guard let remoteId = remotePeerId else { return }
 
         if peerConnection.remoteDescription == nil {
@@ -245,7 +231,6 @@ final class WebRTCManager: NSObject, RTCPeerConnectionDelegate {
             print("📡 ICE candidate sent")
         }
     }
-
 
     func peerConnection(_ peerConnection: RTCPeerConnection, didRemove stream: RTCMediaStream) {
         remoteAudioTrack = nil
@@ -264,16 +249,12 @@ final class WebRTCManager: NSObject, RTCPeerConnectionDelegate {
         print("🔄 Should negotiate")
     }
 
-    func peerConnection(_ peerConnection: RTCPeerConnection,
-                        didChange stateChanged: RTCSignalingState) {
-
+    func peerConnection(_ peerConnection: RTCPeerConnection, didChange stateChanged: RTCSignalingState) {
         print("ℹ️ Signaling state changed:", stateChanged.rawValue)
-
         if stateChanged == .stable {
             flushQueuedICE()
         }
     }
-
 
     func peerConnection(_ peerConnection: RTCPeerConnection, didRemove candidates: [RTCIceCandidate]) {
         print("🗑 Removed ICE candidates")
@@ -294,5 +275,4 @@ final class WebRTCManager: NSObject, RTCPeerConnectionDelegate {
         hasLocalOffer = false
         print("🔹 WebRTCManager cleaned up")
     }
-
 }
