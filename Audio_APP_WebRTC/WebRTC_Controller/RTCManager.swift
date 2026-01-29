@@ -23,7 +23,9 @@ final class WebRTCManager: NSObject, RTCPeerConnectionDelegate {
     private func configureAudioSession() {
         let session = AVAudioSession.sharedInstance()
         do {
-            try session.setCategory(.playAndRecord, mode: .voiceChat, options: [.defaultToSpeaker, .allowBluetooth])
+            try session.setCategory(.playAndRecord,
+                                    mode: .voiceChat,
+                                    options: [.defaultToSpeaker, .allowBluetooth])
             try session.setActive(true)
             print("✅ AVAudioSession configured")
         } catch {
@@ -42,9 +44,8 @@ final class WebRTCManager: NSObject, RTCPeerConnectionDelegate {
     @MainActor
     func setupPeerConnection() {
         let config = RTCConfiguration()
-        config.sdpSemantics = .planB // For old delegate support
+        config.sdpSemantics = .planB
         config.iceServers = [RTCIceServer(urlStrings: ["stun:stun.l.google.com:19302"])]
-
         let constraints = RTCMediaConstraints(mandatoryConstraints: nil, optionalConstraints: nil)
 
         peerConnection = factory.peerConnection(with: config, constraints: constraints, delegate: self)
@@ -63,21 +64,29 @@ final class WebRTCManager: NSObject, RTCPeerConnectionDelegate {
 
     // MARK: - SDP Methods
     @MainActor
-    func createOffer() async throws {
+    func createOffer() async {
         guard let pc = peerConnection else { return }
-        let offer = try await pc.offer(for: RTCMediaConstraints(mandatoryConstraints: nil, optionalConstraints: nil))
-        try await pc.setLocalDescription(offer)
-        print("✅ Offer created & set locally")
-        try await SignalingManager.shared.sendSDP(offer)
+        do {
+            let offer = try await pc.offer(for: RTCMediaConstraints(mandatoryConstraints: nil, optionalConstraints: nil))
+            try await pc.setLocalDescription(offer)
+            print("✅ Offer created & set locally")
+            await SignalingManager.shared.sendSDP(offer)
+        } catch {
+            print("❌ Failed creating offer:", error)
+        }
     }
 
     @MainActor
-    func createAnswer() async throws {
+    func createAnswer() async {
         guard let pc = peerConnection else { return }
-        let answer = try await pc.answer(for: RTCMediaConstraints(mandatoryConstraints: nil, optionalConstraints: nil))
-        try await pc.setLocalDescription(answer)
-        print("✅ Answer created & set locally")
-        try await SignalingManager.shared.sendSDP(answer)
+        do {
+            let answer = try await pc.answer(for: RTCMediaConstraints(mandatoryConstraints: nil, optionalConstraints: nil))
+            try await pc.setLocalDescription(answer)
+            print("✅ Answer created & set locally")
+            await SignalingManager.shared.sendSDP(answer)
+        } catch {
+            print("❌ Failed creating answer:", error)
+        }
     }
 
     @MainActor
@@ -109,7 +118,9 @@ final class WebRTCManager: NSObject, RTCPeerConnectionDelegate {
     }
 
     func peerConnection(_ peerConnection: RTCPeerConnection, didGenerate candidate: RTCIceCandidate) {
-        SignalingManager.shared.sendCandidate(candidate)
+        Task {
+            await SignalingManager.shared.sendCandidate(candidate)
+        }
         print("📡 ICE candidate generated")
     }
 
@@ -136,8 +147,8 @@ final class WebRTCManager: NSObject, RTCPeerConnectionDelegate {
     func peerConnection(_ peerConnection: RTCPeerConnection, didOpen dataChannel: RTCDataChannel) {
         print("📨 Data channel opened: \(dataChannel.label)")
     }
-}
-extension WebRTCManager {
+
+    // MARK: - Cleanup
     func cleanup() {
         peerConnection?.close()
         peerConnection = nil

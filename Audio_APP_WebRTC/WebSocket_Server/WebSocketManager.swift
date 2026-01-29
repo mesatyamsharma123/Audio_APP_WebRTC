@@ -7,14 +7,15 @@ final class SignalingManager: ObservableObject {
     static let shared = SignalingManager()
 
     @Published var isConnected: Bool = false
-    @Published var remoteAvailable: Bool = false // true when another peer connects
+    @Published var remoteAvailable: Bool = false
+    @Published var connectedPeers: Int = 0 // How many peers are connected
 
     private var socket: URLSessionWebSocketTask?
     private var pingTimer: Timer?
 
     // MARK: - Connect
     func connect() {
-        let url = URL(string: "wss://3305980e7d9d.ngrok-free.app")!
+        let url = URL(string: "wss://your-ngrok-url")!
         socket = URLSession.shared.webSocketTask(with: url)
         socket?.resume()
         isConnected = true
@@ -23,7 +24,7 @@ final class SignalingManager: ObservableObject {
         print("🔗 WebSocket connecting...")
     }
 
-    private func disconnect() {
+    func disconnect() {
         socket?.cancel()
         isConnected = false
         remoteAvailable = false
@@ -31,7 +32,7 @@ final class SignalingManager: ObservableObject {
         print("❌ WebSocket disconnected")
     }
 
-    // MARK: - Keep-alive Ping
+    // MARK: - Keep-alive ping
     private func startPing() {
         pingTimer = Timer.scheduledTimer(withTimeInterval: 10, repeats: true) { [weak self] _ in
             Task {
@@ -45,7 +46,7 @@ final class SignalingManager: ObservableObject {
         pingTimer = nil
     }
 
-    // MARK: - Listen
+    // MARK: - Listen for messages
     private func listen() {
         socket?.receive { [weak self] result in
             switch result {
@@ -61,56 +62,27 @@ final class SignalingManager: ObservableObject {
         }
     }
 
-    // MARK: - Send
-    func sendSDP(_ sdp: RTCSessionDescription) {
-        guard remoteAvailable else {
-            print("❌ Cannot send SDP, no remote peer available yet")
-            return
-        }
-        let msg: [String: Any] = [
-            "type": sdp.type == .offer ? "offer" : "answer",
-            "sdp": sdp.sdp
-        ]
-        send(msg)
-    }
-
-    func sendCandidate(_ c: RTCIceCandidate) {
-        guard remoteAvailable else { return }
-        let msg: [String: Any] = [
-            "type": "candidate",
-            "candidate": c.sdp,
-            "sdpMLineIndex": c.sdpMLineIndex,
-            "sdpMid": c.sdpMid ?? ""
-        ]
-        send(msg)
-    }
-
-    private func send(_ msg: [String: Any]) {
-        guard let data = try? JSONSerialization.data(withJSONObject: msg) else { return }
-        let text = String(decoding: data, as: UTF8.self)
-        Task { [weak socket] in
-            do {
-                try await socket?.send(.string(text))
-            } catch {
-                print("WebSocket send error: \(error)")
-            }
-        }
-    }
-
-    // MARK: - Handle Incoming Messages
+    // MARK: - Handle incoming messages
     private func handle(_ text: String) {
-        if text == "ping" || text == "pong" {
+        if text == "ping" || text == "pong" { return }
+
+        // Server sends number of peers
+        if text.starts(with: "peers:") {
+            if let count = Int(text.replacingOccurrences(of: "peers:", with: "")) {
+                DispatchQueue.main.async {
+                    self.connectedPeers = count
+                    self.remoteAvailable = count > 1
+                }
+            }
             return
         }
 
+        // SDP & ICE candidate messages
         guard
             let data = text.data(using: .utf8),
             let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
             let type = json["type"] as? String
         else { return }
-
-        // Whenever we receive a message from another peer, mark remote as available
-        remoteAvailable = true
 
         switch type {
         case "offer":
@@ -124,19 +96,48 @@ final class SignalingManager: ObservableObject {
         case "answer":
             if let sdpString = json["sdp"] as? String {
                 let sdp = RTCSessionDescription(type: .answer, sdp: sdpString)
-                Task {
-                    try? await WebRTCManager.shared.setRemoteDescription(sdp)
-                }
+                Task { try? await WebRTCManager.shared.setRemoteDescription(sdp) }
             }
         case "candidate":
             if let candidate = json["candidate"] as? String,
                let index = json["sdpMLineIndex"] as? Int,
                let mid = json["sdpMid"] as? String? {
-                let c = RTCIceCandidate(sdp: candidate, sdpMLineIndex: Int32(index), sdpMid: mid)
-                Task { try? await WebRTCManager.shared.addIceCandidate(c) }
+                let iceCandidate = RTCIceCandidate(sdp: candidate, sdpMLineIndex: Int32(index), sdpMid: mid)
+                Task { try? await WebRTCManager.shared.addIceCandidate(iceCandidate) }
             }
         default:
             break
+        }
+    }
+
+    // MARK: - Send messages
+    func sendSDP(_ sdp: RTCSessionDescription) async {
+        let msg: [String: Any] = [
+            "type": sdp.type == .offer ? "offer" : "answer",
+            "sdp": sdp.sdp
+        ]
+        await send(msg)
+    }
+
+    func sendCandidate(_ c: RTCIceCandidate) async {
+        let msg: [String: Any] = [
+            "type": "candidate",
+            "candidate": c.sdp,
+            "sdpMLineIndex": c.sdpMLineIndex,
+            "sdpMid": c.sdpMid ?? ""
+        ]
+        await send(msg)
+    }
+
+    private func send(_ msg: [String: Any]) async {
+        guard let data = try? JSONSerialization.data(withJSONObject: msg) else { return }
+        let text = String(decoding: data, as: UTF8.self)
+        Task { [weak socket] in
+            do {
+                try await socket?.send(.string(text))
+            } catch {
+                print("WebSocket send error:", error)
+            }
         }
     }
 }

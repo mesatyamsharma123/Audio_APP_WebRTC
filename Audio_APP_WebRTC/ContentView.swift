@@ -34,21 +34,7 @@ struct ContentView: View {
 
 // MARK: - Connection Status
 private extension ContentView {
-
-    var connectionStatusView: some View {
-        HStack {
-            Circle()
-                .fill(signaling.isConnected ? .green : .red)
-                .frame(width: 12, height: 12)
-            Text(signaling.isConnected ? "Connected to server" : "Connecting...")
-                .font(.subheadline)
-            if signaling.isConnected && !signaling.remoteAvailable {
-                Text("(Waiting for peer)")
-                    .font(.subheadline)
-                    .foregroundColor(.orange)
-            }
-        }
-    }
+    // connectionStatusView removed here as per instructions
 }
 
 // MARK: - Views
@@ -123,6 +109,30 @@ private extension ContentView {
             }
             .buttonStyle(.borderedProminent)
             .disabled(!signaling.remoteAvailable)
+        }
+    }
+}
+ extension ContentView {
+    
+    var connectionStatusView: some View {
+        HStack {
+            Circle()
+                .fill(signaling.isConnected ? .green : .red)
+                .frame(width: 12, height: 12)
+            
+            VStack(alignment: .leading, spacing: 2) {
+                Text(signaling.isConnected ? "Connected to server" : "Connecting...")
+                    .font(.subheadline)
+                Text("Peers online: \(signaling.connectedPeers)")
+                    .font(.subheadline)
+                    .foregroundColor(.blue)
+                
+                if signaling.isConnected && !signaling.remoteAvailable {
+                    Text("(Waiting for peer)")
+                        .font(.subheadline)
+                        .foregroundColor(.orange)
+                }
+            }
         }
     }
 }
