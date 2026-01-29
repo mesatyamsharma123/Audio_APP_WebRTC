@@ -1,28 +1,25 @@
 import Foundation
-import SwiftUI
 import Combine
-import WebRTC      // ✅ Needed for localAudioTrack.isEnabled
-import AVFoundation // ✅ Needed for AVAudioSession
+import AVFoundation
+import WebRTC
 
 @MainActor
 class CallViewModel: ObservableObject {
+    @Published var callState: CallState = .idle
+    @Published var isMuted: Bool = false
+    @Published var isSpeakerOn: Bool = true
+    @Published var showPermissionAlert: Bool = false
 
     enum CallState { case idle, connecting, inCall, ended }
-
-    @Published var callState: CallState = .idle
-    @Published var isMuted = false
-    @Published var isSpeakerOn = true
-    @Published var showPermissionAlert = false
 
     func startCall() {
         guard let peerId = SignalingManager.shared.latestPeerId else {
             print("❌ No peer available to call")
             return
         }
-
         callState = .connecting
+        WebRTCManager.shared.setupPeerConnection()
         Task {
-            WebRTCManager.shared.setupPeerConnection()
             await WebRTCManager.shared.createOffer(to: peerId)
             callState = .inCall
         }
@@ -35,19 +32,12 @@ class CallViewModel: ObservableObject {
 
     func toggleMute() {
         isMuted.toggle()
-        // ✅ This needs WebRTC import
         WebRTCManager.shared.localAudioTrack?.isEnabled = !isMuted
     }
 
     func toggleSpeaker() {
         isSpeakerOn.toggle()
         let session = AVAudioSession.sharedInstance()
-        do {
-            try session.overrideOutputAudioPort(
-                isSpeakerOn ? .speaker : .none
-            )
-        } catch {
-            print("❌ Failed to toggle speaker:", error)
-        }
+        try? session.overrideOutputAudioPort(isSpeakerOn ? .speaker : .none)
     }
 }
