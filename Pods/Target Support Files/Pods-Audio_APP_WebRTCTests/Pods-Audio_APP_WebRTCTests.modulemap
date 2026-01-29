@@ -1,0 +1,6 @@
+framework module Pods_Audio_APP_WebRTCTests {
+  umbrella header "Pods-Audio_APP_WebRTCTests-umbrella.h"
+
+  export *
+  module * { export * }
+}
