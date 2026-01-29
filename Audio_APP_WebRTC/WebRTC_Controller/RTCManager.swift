@@ -13,8 +13,8 @@ final class WebRTCManager: NSObject, RTCPeerConnectionDelegate {
     private(set) var localAudioTrack: RTCAudioTrack?
     private(set) var remoteAudioTrack: RTCAudioTrack?
 
-    private var remotePeerId: String?              // Track remote peer
-    private var queuedCandidates: [RTCIceCandidate] = []  // Queue ICE before remote SDP
+    private var remotePeerId: String?
+    private var queuedCandidates: [RTCIceCandidate] = []
 
     override init() {
         RTCInitializeSSL()
@@ -27,27 +27,17 @@ final class WebRTCManager: NSObject, RTCPeerConnectionDelegate {
     private func configureAudioSession() {
         let session = AVAudioSession.sharedInstance()
         do {
-            try session.setCategory(.audioProcessing,
+            try session.setCategory(.playAndRecord,
                                     mode: .voiceChat,
                                     options: [.defaultToSpeaker, .allowBluetooth])
-            try session.setActive(true, options: [.notifyOthersOnDeactivation])
+            try session.setActive(true)
             print("✅ AVAudioSession configured")
         } catch {
             print("❌ AVAudioSession error:", error)
         }
-
-        let audioSession = RTCAudioSession.sharedInstance()
-        audioSession.useManualAudio = true       // <-- Manual audio control
-        audioSession.isAudioEnabled = true
-        audioSession.lockForConfiguration()
-        try? session.setMode(.voiceChat)         // Ensure voice chat mode
-        audioSession.unlockForConfiguration()
-        print("✅ RTCAudioSession enabled")
     }
 
-
-
-     func forceSpeaker() {
+    func forceSpeaker() {
         let session = AVAudioSession.sharedInstance()
         do {
             try session.overrideOutputAudioPort(.speaker)
@@ -58,33 +48,32 @@ final class WebRTCManager: NSObject, RTCPeerConnectionDelegate {
         }
     }
 
-    // MARK: - Peer Connection
+    // MARK: - PeerConnection
     @MainActor
     func setupPeerConnection() {
         let config = RTCConfiguration()
         config.sdpSemantics = .unifiedPlan
         config.iceServers = [RTCIceServer(urlStrings: ["stun:stun.l.google.com:19302"])]
+
         let constraints = RTCMediaConstraints(mandatoryConstraints: nil, optionalConstraints: nil)
-
         peerConnection = factory.peerConnection(with: config, constraints: constraints, delegate: self)
-        addLocalAudioTrack()
-        print("✅ PeerConnection created")
-    }
 
-    private func addLocalAudioTrack() {
+        // Add local audio track
         let audioSource = factory.audioSource(with: nil)
         localAudioTrack = factory.audioTrack(with: audioSource, trackId: "audio0")
         if let track = localAudioTrack {
             peerConnection?.add(track, streamIds: ["stream0"])
             print("✅ Local audio track added")
         }
+
+        print("✅ PeerConnection created")
     }
 
-    // MARK: - SDP Methods
+    // MARK: - SDP
     @MainActor
     func createOffer(to peerId: String) async {
         guard let pc = peerConnection else { return }
-        self.remotePeerId = peerId
+        remotePeerId = peerId
         do {
             let offer = try await pc.offer(for: RTCMediaConstraints(mandatoryConstraints: nil, optionalConstraints: nil))
             try await pc.setLocalDescription(offer)
@@ -103,31 +92,19 @@ final class WebRTCManager: NSObject, RTCPeerConnectionDelegate {
         if peerConnection == nil {
             setupPeerConnection()
         }
-
         guard let pc = peerConnection else { return }
 
-        print("ℹ️ Handling remote offer, signalingState:", pc.signalingState.rawValue)
-
-        // Glare fix: recreate PeerConnection if local offer exists
+        // Glare fix
         if pc.signalingState == .haveLocalOffer {
-            print("⚠️ Glare detected → recreating PeerConnection")
             cleanup()
             setupPeerConnection()
         }
-
-        applyRemoteOfferAndAnswer(sdp)
-    }
-
-    @MainActor
-    private func applyRemoteOfferAndAnswer(_ sdp: RTCSessionDescription) {
-        guard let pc = peerConnection, let remoteId = remotePeerId else { return }
 
         pc.setRemoteDescription(sdp) { error in
             if let error = error {
                 print("❌ Failed to set remote SDP:", error)
                 return
             }
-
             print("✅ Remote offer set")
 
             pc.answer(for: RTCMediaConstraints(mandatoryConstraints: nil, optionalConstraints: nil)) { answer, error in
@@ -135,7 +112,6 @@ final class WebRTCManager: NSObject, RTCPeerConnectionDelegate {
                     print("❌ Failed creating answer:", error)
                     return
                 }
-
                 guard let answer = answer else { return }
 
                 pc.setLocalDescription(answer) { error in
@@ -143,109 +119,52 @@ final class WebRTCManager: NSObject, RTCPeerConnectionDelegate {
                         print("❌ Failed setting local answer:", error)
                         return
                     }
-
                     print("✅ Answer created & set locally")
-                    Task {
-                        await SignalingManager.shared.sendSDP(answer, to: remoteId)
-                    }
+                    Task { await SignalingManager.shared.sendSDP(answer, to: peerId) }
                 }
             }
         }
     }
 
     @MainActor
-    func createAnswer(to peerId: String) {
+    func addIceCandidate(_ candidate: RTCIceCandidate) async {
         guard let pc = peerConnection else { return }
-        remotePeerId = peerId
-
-        pc.answer(for: RTCMediaConstraints(mandatoryConstraints: nil, optionalConstraints: nil)) { answer, error in
-            if let error = error {
-                print("❌ Failed creating answer:", error)
-                return
-            }
-
-            guard let answer = answer else { return }
-
-            pc.setLocalDescription(answer) { error in
-                if let error = error {
-                    print("❌ Failed setting local answer:", error)
-                    return
-                }
-
-                print("✅ Answer created & set locally")
-                Task {
-                    await SignalingManager.shared.sendSDP(answer, to: peerId)
-                }
-            }
+        if pc.remoteDescription == nil {
+            queuedCandidates.append(candidate)
+            print("⏳ ICE candidate queued")
+        } else {
+            try? await pc.add(candidate)
+            print("✅ ICE candidate added: \(candidate.sdp)")
         }
     }
 
-    @MainActor
-    func setRemoteDescription(_ sdp: RTCSessionDescription) {
-        peerConnection?.setRemoteDescription(sdp) { error in
-            if let error = error {
-                print("❌ Failed to set remote SDP:", error)
-            } else {
-                print("✅ Remote SDP set:", sdp.type.rawValue)
-            }
-        }
-    }
-
-    @MainActor
-    func addIceCandidate(_ candidate: RTCIceCandidate) async throws {
-        guard let pc = peerConnection else { return }
-        try await pc.add(candidate)
-        print("✅ ICE candidate added: \(candidate.sdp)")
-    }
-
-    @MainActor
     private func flushQueuedICE() {
         guard let remoteId = remotePeerId else { return }
-        print("🚀 Flushing \(queuedCandidates.count) queued ICE candidates")
         for candidate in queuedCandidates {
-            Task {
-                await SignalingManager.shared.sendCandidate(candidate, to: remoteId)
-            }
+            Task { await SignalingManager.shared.sendCandidate(candidate, to: remoteId) }
         }
         queuedCandidates.removeAll()
+        print("🚀 Flushed queued ICE candidates")
     }
 
     // MARK: - RTCPeerConnectionDelegate
-    func peerConnection(_ peerConnection: RTCPeerConnection,
-                        didAdd stream: RTCMediaStream) {
-
+    func peerConnection(_ peerConnection: RTCPeerConnection, didAdd stream: RTCMediaStream) {
         if let audioTrack = stream.audioTracks.first {
             remoteAudioTrack = audioTrack
             remoteAudioTrack?.isEnabled = true
-
-            // Force speaker
             forceSpeaker()
-
-            // Ensure session active
-            try? AVAudioSession.sharedInstance().setActive(true)
-            
             print("🔊 Remote audio track received & speaker forced")
-        }
-    }
-
-
-    func peerConnection(_ peerConnection: RTCPeerConnection, didGenerate candidate: RTCIceCandidate) {
-        guard let remoteId = remotePeerId else { return }
-
-        if peerConnection.remoteDescription == nil {
-            queuedCandidates.append(candidate)
-            print("⏳ ICE candidate queued (remote SDP not ready)")
-        } else {
-            Task {
-                await SignalingManager.shared.sendCandidate(candidate, to: remoteId)
-            }
-            print("📡 ICE candidate sent")
         }
     }
 
     func peerConnection(_ peerConnection: RTCPeerConnection, didRemove stream: RTCMediaStream) {
         remoteAudioTrack = nil
         print("🗑 Remote stream removed")
+    }
+
+    func peerConnection(_ peerConnection: RTCPeerConnection, didChange stateChanged: RTCSignalingState) {
+        print("ℹ️ Signaling state changed:", stateChanged.rawValue)
+        if stateChanged == .stable { flushQueuedICE() }
     }
 
     func peerConnection(_ peerConnection: RTCPeerConnection, didChange newState: RTCIceConnectionState) {
@@ -260,13 +179,6 @@ final class WebRTCManager: NSObject, RTCPeerConnectionDelegate {
         print("🔄 Should negotiate")
     }
 
-    func peerConnection(_ peerConnection: RTCPeerConnection, didChange stateChanged: RTCSignalingState) {
-        print("ℹ️ Signaling state changed:", stateChanged.rawValue)
-        if stateChanged == .stable {
-            flushQueuedICE()
-        }
-    }
-
     func peerConnection(_ peerConnection: RTCPeerConnection, didRemove candidates: [RTCIceCandidate]) {
         print("🗑 Removed ICE candidates")
     }
@@ -275,7 +187,17 @@ final class WebRTCManager: NSObject, RTCPeerConnectionDelegate {
         print("📨 Data channel opened:", dataChannel.label)
     }
 
-    // MARK: - Cleanup
+    func peerConnection(_ peerConnection: RTCPeerConnection, didGenerate candidate: RTCIceCandidate) {
+        guard let remoteId = remotePeerId else { return }
+        if peerConnection.remoteDescription == nil {
+            queuedCandidates.append(candidate)
+            print("⏳ ICE candidate queued (remote SDP not ready)")
+        } else {
+            Task { await SignalingManager.shared.sendCandidate(candidate, to: remoteId) }
+            print("📡 ICE candidate sent")
+        }
+    }
+
     func cleanup() {
         peerConnection?.close()
         peerConnection = nil
