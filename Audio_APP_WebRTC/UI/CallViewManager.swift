@@ -16,14 +16,18 @@ class CallViewModel: ObservableObject {
             print("❌ No peer available to call")
             return
         }
-        callState = .connecting
-        WebRTCManager.shared.setupPeerConnection()
-        Task {
-            await WebRTCManager.shared.createOffer(to: peerId)
-            callState = .inCall
+
+        // Only create offer if we are initiating
+        if !WebRTCManager.shared.hasLocalOffer {
+            callState = .connecting
+            WebRTCManager.shared.setupPeerConnection()
+            Task {
+                await WebRTCManager.shared.createOffer(to: peerId)
+                callState = .inCall
+            }
         }
     }
-    
+
     func endCall() {
         WebRTCManager.shared.cleanup()
         callState = .ended

@@ -5,6 +5,7 @@ import AVFoundation
 final class WebRTCManager: NSObject, RTCPeerConnectionDelegate {
 
     static let shared = WebRTCManager()
+    private(set) var hasLocalOffer = false
 
     private(set) var peerConnection: RTCPeerConnection?
     private let factory: RTCPeerConnectionFactory
@@ -66,6 +67,8 @@ final class WebRTCManager: NSObject, RTCPeerConnectionDelegate {
     }
 
     // MARK: - SDP Methods
+   
+
     @MainActor
     func createOffer(to peerId: String) async {
         guard let pc = peerConnection else { return }
@@ -73,12 +76,14 @@ final class WebRTCManager: NSObject, RTCPeerConnectionDelegate {
         do {
             let offer = try await pc.offer(for: RTCMediaConstraints(mandatoryConstraints: nil, optionalConstraints: nil))
             try await pc.setLocalDescription(offer)
+            hasLocalOffer = true // <-- track that we have a local offer
             print("✅ Offer created & set locally for peer:", peerId)
             await SignalingManager.shared.sendSDP(offer, to: peerId)
         } catch {
             print("❌ Failed creating offer:", error)
         }
     }
+
 
     @MainActor
     func createAnswer(to peerId: String) async {
@@ -183,6 +188,8 @@ final class WebRTCManager: NSObject, RTCPeerConnectionDelegate {
         remoteAudioTrack = nil
         queuedCandidates.removeAll()
         remotePeerId = nil
+        hasLocalOffer = false
         print("🔹 WebRTCManager cleaned up")
     }
+
 }

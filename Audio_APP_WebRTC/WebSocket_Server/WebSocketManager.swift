@@ -92,9 +92,13 @@ final class SignalingManager: ObservableObject {
                 let sdp = RTCSessionDescription(type: .offer, sdp: sdpString)
                 Task {
                     do {
-                        try await WebRTCManager.shared.setRemoteDescription(sdp)
-                        // Only create answer after remote SDP is set AND type is offer
-                        try await WebRTCManager.shared.createAnswer(to: fromPeer)
+                        // If we already created a local offer, do not set remote SDP immediately
+                        if !WebRTCManager.shared.hasLocalOffer {
+                            try await WebRTCManager.shared.setRemoteDescription(sdp)
+                            try await WebRTCManager.shared.createAnswer(to: fromPeer)
+                        } else {
+                            print("⚠️ Received remote offer but we already have local offer, skipping")
+                        }
                     } catch {
                         print("❌ Failed handling offer:", error)
                     }
