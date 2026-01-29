@@ -48,7 +48,7 @@ final class WebRTCManager: NSObject, RTCPeerConnectionDelegate {
     @MainActor
     func setupPeerConnection() {
         let config = RTCConfiguration()
-        config.sdpSemantics = .planB
+        config.sdpSemantics = .unifiedPlan
         config.iceServers = [RTCIceServer(urlStrings: ["stun:stun.l.google.com:19302"])]
         let constraints = RTCMediaConstraints(mandatoryConstraints: nil, optionalConstraints: nil)
 
@@ -63,6 +63,16 @@ final class WebRTCManager: NSObject, RTCPeerConnectionDelegate {
         if let track = localAudioTrack {
             peerConnection?.add(track, streamIds: ["stream0"])
             print("✅ Local audio track added")
+        }
+    }
+    private func forceSpeaker() {
+        let session = AVAudioSession.sharedInstance()
+        do {
+            try session.overrideOutputAudioPort(.speaker)
+            try session.setActive(true)
+            print("🔊 Audio routed to speaker")
+        } catch {
+            print("❌ Failed to force speaker:", error)
         }
     }
 
@@ -206,11 +216,17 @@ final class WebRTCManager: NSObject, RTCPeerConnectionDelegate {
 
 
     // MARK: - RTCPeerConnectionDelegate
-    func peerConnection(_ peerConnection: RTCPeerConnection, didAdd stream: RTCMediaStream) {
+    func peerConnection(_ peerConnection: RTCPeerConnection,
+                        didAdd stream: RTCMediaStream) {
+
         if let audioTrack = stream.audioTracks.first {
             remoteAudioTrack = audioTrack
             remoteAudioTrack?.isEnabled = true
-            print("🔊 Remote audio track received")
+            
+            // 🔥 Force audio to speaker
+            forceSpeaker()
+            
+            print("🔊 Remote audio track received & speaker forced")
         }
     }
 
