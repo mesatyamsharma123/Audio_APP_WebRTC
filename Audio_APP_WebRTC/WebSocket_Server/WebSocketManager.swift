@@ -15,7 +15,7 @@ final class SignalingManager: ObservableObject {
 
     // MARK: - Connect
     func connect() {
-        let url = URL(string: "wss://your-ngrok-url")!
+        let url = URL(string: "wss://8d100129a811.ngrok-free.app")!
         socket = URLSession.shared.webSocketTask(with: url)
         socket?.resume()
         isConnected = true
