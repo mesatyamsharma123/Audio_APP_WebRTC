@@ -84,6 +84,17 @@ final class WebRTCManager: NSObject, RTCPeerConnectionDelegate {
             print("❌ Failed creating offer:", error)
         }
     }
+    @MainActor
+    func setRemoteDescription(_ sdp: RTCSessionDescription) async {
+        guard let pc = peerConnection else { return }
+        do {
+            try await pc.setRemoteDescription(sdp)
+            print("✅ Remote SDP set: \(sdp.type.rawValue)")
+            flushQueuedICE() // flush any queued ICE after remote SDP is set
+        } catch {
+            print("❌ Failed to set remote SDP:", error)
+        }
+    }
 
     @MainActor
     func handleRemoteOffer(_ sdp: RTCSessionDescription, from peerId: String) {
