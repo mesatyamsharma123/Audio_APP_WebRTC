@@ -10,13 +10,11 @@ class CallViewModel: ObservableObject {
     @Published var isSpeakerOn: Bool = true
     
     enum CallState { case idle, connecting, inCall, ended }
-   
 
-    
     func startCall() {
         // Request mic permission first
         AVAudioSession.sharedInstance().requestRecordPermission { granted in
-            DispatchQueue.main.async {  // UI / ViewModel updates on main thread
+            Task { @MainActor in
                 guard granted else {
                     print("❌ Mic permission denied")
                     return
@@ -27,20 +25,25 @@ class CallViewModel: ObservableObject {
                     return
                 }
 
-                // Only create offer if we are initiating
                 if !WebRTCManager.shared.hasLocalOffer {
                     self.callState = .connecting
+                    
+                    // 1️⃣ Setup PeerConnection and local audio
                     WebRTCManager.shared.setupPeerConnection()
                     
-                    Task {
-                        await WebRTCManager.shared.createOffer(to: peerId)
-                        self.callState = .inCall
-                    }
+                    // 2️⃣ Force audio to speaker and enable local audio
+                    WebRTCManager.shared.forceSpeaker()
+                    WebRTCManager.shared.localAudioTrack?.isEnabled = true
+                    
+                    // 3️⃣ Create the offer
+                    await WebRTCManager.shared.createOffer(to: peerId)
+                    
+                    // 4️⃣ Update state
+                    self.callState = .inCall
                 }
             }
         }
     }
-
 
     func endCall() {
         WebRTCManager.shared.cleanup()

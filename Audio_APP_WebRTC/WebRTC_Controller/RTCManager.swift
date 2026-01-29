@@ -45,7 +45,7 @@ final class WebRTCManager: NSObject, RTCPeerConnectionDelegate {
         print("✅ RTCAudioSession enabled")
     }
 
-    private func forceSpeaker() {
+     func forceSpeaker() {
         let session = AVAudioSession.sharedInstance()
         do {
             try session.overrideOutputAudioPort(.speaker)
