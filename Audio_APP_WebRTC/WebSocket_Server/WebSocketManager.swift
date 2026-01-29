@@ -91,18 +91,15 @@ final class SignalingManager: ObservableObject {
                let fromPeer = json["from"] as? String {
 
                 DispatchQueue.main.async {
-
                     if WebRTCManager.shared.peerConnection == nil {
                         WebRTCManager.shared.setupPeerConnection()
                     }
 
                     let sdp = RTCSessionDescription(type: .offer, sdp: sdpString)
-
-                    // ✅ NO async / await here
-                    WebRTCManager.shared.setRemoteDescription(sdp)
-                    WebRTCManager.shared.createAnswer(to: fromPeer)
+                    WebRTCManager.shared.handleRemoteOffer(sdp, from: fromPeer)
                 }
             }
+
 
 
 

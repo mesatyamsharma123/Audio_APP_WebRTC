@@ -84,6 +84,67 @@ final class WebRTCManager: NSObject, RTCPeerConnectionDelegate {
         }
     }
 
+    
+    @MainActor
+    func handleRemoteOffer(_ sdp: RTCSessionDescription, from peerId: String) {
+        remotePeerId = peerId
+
+        if peerConnection == nil {
+            setupPeerConnection()
+        }
+
+        guard let pc = peerConnection else { return }
+
+        print("ℹ️ Handling remote offer, signalingState:", pc.signalingState.rawValue)
+
+        // 🔥 GLARE FIX FOR iOS (NO rollback support)
+        if pc.signalingState == .haveLocalOffer {
+            print("⚠️ Glare detected → recreating PeerConnection")
+
+            cleanup()                 // close old PC
+            setupPeerConnection()     // create fresh PC
+        }
+
+        applyRemoteOfferAndAnswer(sdp)
+    }
+
+    @MainActor
+    private func applyRemoteOfferAndAnswer(_ sdp: RTCSessionDescription) {
+        guard let pc = peerConnection, let remoteId = remotePeerId else { return }
+
+        pc.setRemoteDescription(sdp) { error in
+            if let error = error {
+                print("❌ Failed to set remote SDP:", error)
+                return
+            }
+
+            print("✅ Remote offer set")
+
+            pc.answer(for: RTCMediaConstraints(mandatoryConstraints: nil, optionalConstraints: nil)) { answer, error in
+                if let error = error {
+                    print("❌ Failed creating answer:", error)
+                    return
+                }
+
+                guard let answer = answer else { return }
+
+                pc.setLocalDescription(answer) { error in
+                    if let error = error {
+                        print("❌ Failed setting local answer:", error)
+                        return
+                    }
+
+                    print("✅ Answer created & set locally")
+
+                    Task {
+                        await SignalingManager.shared.sendSDP(answer, to: remoteId)
+                    }
+                }
+            }
+        }
+    }
+
+
 
     @MainActor
     func createAnswer(to peerId: String) {
