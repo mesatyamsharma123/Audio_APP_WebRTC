@@ -30,20 +30,22 @@ final class WebRTCManager: NSObject, RTCPeerConnectionDelegate {
             try session.setCategory(.playAndRecord,
                                     mode: .voiceChat,
                                     options: [.defaultToSpeaker, .allowBluetooth])
-            try session.setActive(true)
+            try session.setActive(true, options: [.notifyOthersOnDeactivation])
             print("✅ AVAudioSession configured")
         } catch {
             print("❌ AVAudioSession error:", error)
         }
 
-        // WebRTC audio session setup
         let audioSession = RTCAudioSession.sharedInstance()
-        audioSession.useManualAudio = true
+        audioSession.useManualAudio = true       // <-- Manual audio control
         audioSession.isAudioEnabled = true
         audioSession.lockForConfiguration()
+        try? session.setMode(.voiceChat)         // Ensure voice chat mode
         audioSession.unlockForConfiguration()
         print("✅ RTCAudioSession enabled")
     }
+
+
 
      func forceSpeaker() {
         let session = AVAudioSession.sharedInstance()
@@ -209,14 +211,23 @@ final class WebRTCManager: NSObject, RTCPeerConnectionDelegate {
     }
 
     // MARK: - RTCPeerConnectionDelegate
-    func peerConnection(_ peerConnection: RTCPeerConnection, didAdd stream: RTCMediaStream) {
+    func peerConnection(_ peerConnection: RTCPeerConnection,
+                        didAdd stream: RTCMediaStream) {
+
         if let audioTrack = stream.audioTracks.first {
             remoteAudioTrack = audioTrack
             remoteAudioTrack?.isEnabled = true
+
+            // Force speaker
             forceSpeaker()
+
+            // Ensure session active
+            try? AVAudioSession.sharedInstance().setActive(true)
+            
             print("🔊 Remote audio track received & speaker forced")
         }
     }
+
 
     func peerConnection(_ peerConnection: RTCPeerConnection, didGenerate candidate: RTCIceCandidate) {
         guard let remoteId = remotePeerId else { return }
