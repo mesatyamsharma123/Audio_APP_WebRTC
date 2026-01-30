@@ -14,9 +14,9 @@ final class SignalingManager: ObservableObject {
     private var socket: URLSessionWebSocketTask?
     private var pingTimer: Timer?
     
-    // MARK: - Connect
+   
     func connect() {
-        guard let url = URL(string: "wss://32acedb143ae.ngrok-free.app") else { return }
+        guard let url = URL(string: "wss://dc3b7631f6f5.ngrok-free.app") else { return }
         socket = URLSession.shared.webSocketTask(with: url)
         socket?.resume()
         isConnected = true
@@ -34,7 +34,7 @@ final class SignalingManager: ObservableObject {
         print("❌ WebSocket disconnected")
     }
     
-    // MARK: - Keep-alive ping
+
     private func startPing() {
         pingTimer = Timer.scheduledTimer(withTimeInterval: 10, repeats: true) { [weak self] _ in
             Task {
@@ -52,7 +52,7 @@ final class SignalingManager: ObservableObject {
         pingTimer = nil
     }
     
-    // MARK: - Listen
+
     private func listen() {
         socket?.receive { [weak self] result in
             guard let self = self else { return }
@@ -67,7 +67,7 @@ final class SignalingManager: ObservableObject {
         }
     }
     
-    // MARK: - Handle messages
+    
     private func handle(_ text: String) {
         if text == "ping" || text == "pong" { return }
         
@@ -133,7 +133,7 @@ final class SignalingManager: ObservableObject {
         }
     }
     
-    // MARK: - Send SDP / Candidate
+ 
     func sendSDP(_ sdp: RTCSessionDescription, to peerId: String) async {
         let msg: [String: Any] = [
             "type": sdp.type == .offer ? "offer" : "answer",
