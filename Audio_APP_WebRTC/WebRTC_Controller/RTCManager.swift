@@ -28,7 +28,7 @@ final class WebRTCManager: NSObject, RTCPeerConnectionDelegate {
         let session = AVAudioSession.sharedInstance()
         do {
             try session.setCategory(.playAndRecord,
-                                    mode: .voiceChat,
+                                    mode: .videoChat,
                                     options: [.defaultToSpeaker, .allowBluetooth])
             try session.setActive(true)
             print("AVAudioSession configured")

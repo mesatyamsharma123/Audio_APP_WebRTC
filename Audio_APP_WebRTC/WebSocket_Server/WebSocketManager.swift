@@ -16,7 +16,7 @@ final class SignalingManager: ObservableObject {
     
    
     func connect() {
-        guard let url = URL(string: "wss:/e4bcaae0bb9b.ngrok-free.app") else { return }
+        guard let url = URL(string: "wss://37f44a69c5bf.ngrok-free.app") else { return }
         socket = URLSession.shared.webSocketTask(with: url)
         socket?.resume()
         isConnected = true
@@ -85,7 +85,7 @@ final class SignalingManager: ObservableObject {
                     self.connectedPeers = peers.count
                     self.remoteAvailable = peers.contains { $0 != myId }
                     self.latestPeerId = peers.first { $0 != myId }
-                    print("🔹 Peers updated: \(peers), latestPeerId: \(self.latestPeerId ?? "nil")")
+                    print(" Peers updated: \(peers), latestPeerId: \(self.latestPeerId ?? "nil")")
                 }
             }
         case "offer":
