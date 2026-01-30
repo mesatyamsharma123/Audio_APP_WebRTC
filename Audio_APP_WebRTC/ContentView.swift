@@ -31,10 +31,15 @@ struct ContentView: View {
         HStack {
             Circle().fill(signaling.isConnected ? .green : .red).frame(width: 12, height: 12)
             VStack(alignment: .leading) {
+                
                 Text(signaling.isConnected ? "Connected to server" : "Connecting...")
+                
                 Text("Peers online: \(signaling.connectedPeers)").foregroundColor(.blue)
+                
                 if signaling.isConnected && !signaling.remoteAvailable {
-                    Text("(Waiting for peer)").foregroundColor(.orange)
+                    
+                    Text("(Waiting for peer)")
+                        .foregroundColor(.orange)
                 }
             }
         }

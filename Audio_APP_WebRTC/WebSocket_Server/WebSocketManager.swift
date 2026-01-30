@@ -16,7 +16,7 @@ final class SignalingManager: ObservableObject {
     
    
     func connect() {
-        guard let url = URL(string: "wss://dc3b7631f6f5.ngrok-free.app") else { return }
+        guard let url = URL(string: "wss:/e4bcaae0bb9b.ngrok-free.app") else { return }
         socket = URLSession.shared.webSocketTask(with: url)
         socket?.resume()
         isConnected = true
@@ -58,7 +58,9 @@ final class SignalingManager: ObservableObject {
             guard let self = self else { return }
             switch result {
             case .success(let message):
-                if case .string(let text) = message { self.handle(text) }
+                if case .string(let text) = message {
+                    self.handle(text)
+                }
             case .failure(let error):
                 print("WebSocket receive error:", error)
                 self.disconnect()
@@ -82,7 +84,7 @@ final class SignalingManager: ObservableObject {
                 DispatchQueue.main.async {
                     self.connectedPeers = peers.count
                     self.remoteAvailable = peers.contains { $0 != myId }
-                    self.latestPeerId = peers.first { $0 != myId } // keep your logic
+                    self.latestPeerId = peers.first { $0 != myId }
                     print("🔹 Peers updated: \(peers), latestPeerId: \(self.latestPeerId ?? "nil")")
                 }
             }
@@ -161,7 +163,7 @@ final class SignalingManager: ObservableObject {
             do {
                 try await socket?.send(.string(text))
             } catch {
-                print("❌ WebSocket send error:", error)
+                print("WebSocket send error:", error)
             }
         }
     }
