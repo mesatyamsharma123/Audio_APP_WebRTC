@@ -228,21 +228,21 @@ final class WebRTCManager: NSObject, RTCPeerConnectionDelegate {
     }
 
     // MARK: - Delegate (Unified Plan)
-    func peerConnection(_ peerConnection: RTCPeerConnection,
-                        didAdd rtpReceiver: RTCRtpReceiver,
-                        streams: [RTCMediaStream]) {
-
-        if let video = rtpReceiver.track as? RTCVideoTrack {
-            remoteVideoTrack = video
-            print("📺 Remote video received")
-        }
-
-        if let audio = rtpReceiver.track as? RTCAudioTrack {
-            remoteAudioTrack = audio
-            forceSpeaker()
-            print("🔊 Remote audio received")
-        }
-    }
+//    func peerConnection(_ peerConnection: RTCPeerConnection,
+//                        didAdd rtpReceiver: RTCRtpReceiver,
+//                        streams: [RTCMediaStream]) {
+//
+//        if let video = rtpReceiver.track as? RTCVideoTrack {
+//            remoteVideoTrack = video
+//            print("📺 Remote video received")
+//        }
+//
+//        if let audio = rtpReceiver.track as? RTCAudioTrack {
+//            remoteAudioTrack = audio
+//            forceSpeaker()
+//            print("🔊 Remote audio received")
+//        }
+//    }
 
     func peerConnection(_ peerConnection: RTCPeerConnection,
                         didGenerate candidate: RTCIceCandidate) {
@@ -261,9 +261,25 @@ final class WebRTCManager: NSObject, RTCPeerConnectionDelegate {
         
     }
     
-    func peerConnection(_ peerConnection: RTCPeerConnection, didAdd stream: RTCMediaStream) {
+    func peerConnection(_ peerConnection: RTCPeerConnection,
+                        didAdd stream: RTCMediaStream) {
 
+        // 🔊 Remote Audio
+        if let audioTrack = stream.audioTracks.first {
+            remoteAudioTrack = audioTrack
+            remoteAudioTrack?.isEnabled = true
+            forceSpeaker()
+            print("🔊 Remote audio track received")
+        }
+
+        // 📺 Remote Video
+        if let videoTrack = stream.videoTracks.first {
+            remoteVideoTrack = videoTrack
+            remoteVideoTrack?.isEnabled = true
+            print("📺 Remote video track received")
+        }
     }
+
     
     func peerConnection(_ peerConnection: RTCPeerConnection, didRemove stream: RTCMediaStream) {
         
