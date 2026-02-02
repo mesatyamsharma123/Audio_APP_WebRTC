@@ -25,9 +25,7 @@ struct ContentView: View {
         }
         .padding()
         .onAppear {
-            if !signaling.isConnected {
                 SignalingManager.shared.connect()
-            }
         }
 
     }
