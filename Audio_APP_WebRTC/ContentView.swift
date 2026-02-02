@@ -25,8 +25,11 @@ struct ContentView: View {
         }
         .padding()
         .onAppear {
-            SignalingManager.shared.connect()
+            if !signaling.isConnected {
+                SignalingManager.shared.connect()
+            }
         }
+
     }
 
     // MARK: - Connection Status

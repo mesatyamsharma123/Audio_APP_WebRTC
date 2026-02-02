@@ -15,7 +15,7 @@ final class SignalingManager: ObservableObject {
     private var pingTimer: Timer?
 
     func connect() {
-        guard let url = URL(string: "wss://ddb55ac1dff2.ngrok-free.app") else { return }
+        guard let url = URL(string: "wss://889ea7e0c8b9.ngrok-free.app") else { return }
         socket = URLSession.shared.webSocketTask(with: url)
         socket?.resume()
         isConnected = true
@@ -88,7 +88,14 @@ final class SignalingManager: ObservableObject {
         case "answer":
             if let sdpString = json["sdp"] as? String {
                 let sdp = RTCSessionDescription(type: .answer, sdp: sdpString)
-                Task { await WebRTCManager.shared.setRemoteDescription(sdp) }
+                if let pc = WebRTCManager.shared.peerConnection {
+                    pc.setRemoteDescription(sdp) { _ in
+                        // After setting remote description, send any queued ICE candidates if needed
+                        // (WebRTCManager handles enqueuing/sending in its delegate methods)
+                    }
+                } else {
+                    print("⚠️ PeerConnection not ready to set remote answer")
+                }
             }
 
         case "candidate":
@@ -135,3 +142,4 @@ final class SignalingManager: ObservableObject {
         try? await socket?.send(.string(text))
     }
 }
+
