@@ -15,7 +15,7 @@ final class SignalingManager: ObservableObject {
     private var pingTimer: Timer?
 
     func connect() {
-        guard let url = URL(string: "wss://efa8018c5dd6.ngrok-free.app") else { return }
+        guard let url = URL(string: "wss://f726e817afaf.ngrok-free.app") else { return }
         socket = URLSession.shared.webSocketTask(with: url)
         socket?.resume()
         isConnected = true
